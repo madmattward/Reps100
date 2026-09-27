@@ -43,7 +43,7 @@ jobs:
       - name: Apply Health Connect lambda fix
         working-directory: ${{ steps.project.outputs.dir }}
         run: |
-          sed -i "1505i\\        final double exportTotal = total;" app/src/main/java/com/reps100/app/MainActivity.java
+          sed -i "/HealthConnectBridge.INSTANCE.hasPermissions(this, ok -> {/i\\        final double exportTotal = total;" app/src/main/java/com/reps100/app/MainActivity.java
           sed -i "s/,now,total,exportDetails/,now,exportTotal,exportDetails/" app/src/main/java/com/reps100/app/MainActivity.java
 
       - name: Build V11
