@@ -1,0 +1,52 @@
+name: Build Reps100 V11 APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Reassemble V11 source
+        run: |
+          cat Reps100-V11-source.zip.part-* > Reps100-V11-source.zip
+          mkdir v11
+          unzip -q Reps100-V11-source.zip -d v11
+
+      - name: Find Android project
+        id: project
+        run: |
+          GRADLEW=$(find "$GITHUB_WORKSPACE/v11" -type f -name gradlew -print -quit)
+          test -n "$GRADLEW"
+          chmod +x "$GRADLEW"
+          echo "dir=$(dirname "$GRADLEW")" >> "$GITHUB_OUTPUT"
+
+      - name: Build V11
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Collect APK
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          APK=$(find app/build/outputs/apk/release -type f -name "*.apk" -print -quit)
+          test -n "$APK"
+          cp "$APK" "$GITHUB_WORKSPACE/output/Reps100-V11-unsigned.apk"
+
+      - name: Upload V11 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reps100-V11-APK
+          path: output/Reps100-V11-unsigned.apk
+          retention-days: 30
