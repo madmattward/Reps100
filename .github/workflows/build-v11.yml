@@ -2,6 +2,10 @@ name: Build Reps100 V11 APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-v11.yml"
 
 jobs:
   build:
