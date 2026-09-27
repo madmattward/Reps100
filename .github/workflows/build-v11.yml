@@ -40,6 +40,10 @@ jobs:
         working-directory: ${{ steps.project.outputs.dir }}
         run: sed -i "1727,1730{s/wc,hc/wc,hipCm/;s/\bhc\b/hipCm/g}" app/src/main/java/com/reps100/app/MainActivity.java
 
+      - name: Apply Health Connect lambda fix
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: sed -i "1505i\\        final double exportTotal = total;\n1506s/,total,exportDetails/,exportTotal,exportDetails/" app/src/main/java/com/reps100/app/MainActivity.java
+
       - name: Build V11
         working-directory: ${{ steps.project.outputs.dir }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
