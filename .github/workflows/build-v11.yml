@@ -36,6 +36,10 @@ jobs:
           chmod +x "$GRADLEW"
           echo "dir=$(dirname "$GRADLEW")" >> "$GITHUB_OUTPUT"
 
+      - name: Apply profile compile fix
+        working-directory: ${{ steps.project.outputs.dir }}
+        run: sed -i "1727s/double hc/double hipCm/;1728s/\bhc\b/hipCm/g" app/src/main/java/com/reps100/app/MainActivity.java
+
       - name: Build V11
         working-directory: ${{ steps.project.outputs.dir }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
