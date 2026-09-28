@@ -28,7 +28,7 @@ jobs:
 
       - name: Build V12 debug APK
         working-directory: V12-source
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload V12 APK
         uses: actions/upload-artifact@v4
