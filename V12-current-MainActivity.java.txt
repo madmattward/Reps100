@@ -51,6 +51,11 @@ public class MainActivity extends Activity {
   HashMap<String, Double> routineWeights = new HashMap<>();
   HashMap<String, String> routineWeightUnits = new HashMap<>();
 
+  // V12: load data belongs to each routine occurrence, not the exercise name.
+  // This allows the same exercise to appear multiple times with different loads.
+  ArrayList<Double> routineOccurrenceWeights = new ArrayList<>();
+  ArrayList<String> routineOccurrenceUnits = new ArrayList<>();
+
   int selectedSets = 5;
   int minReps = 10;
   int maxReps = 30;
@@ -62,7 +67,11 @@ public class MainActivity extends Activity {
   long workoutStarted = 0;
 
   SharedPreferences prefs;
-  SoundPool soundPool; int clickSound=0; long lastScrollClick=0;
+  SoundPool soundPool;
+  int clickSound=0;
+  boolean clickSoundReady=false;
+  long lastScrollClick=0;
+  int lastScrollStep=-1;
   SimpleDateFormat dateKey = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
   SimpleDateFormat dateTime = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US);
   SimpleDateFormat dayLabel = new SimpleDateFormat("EEE", Locale.US);
@@ -81,6 +90,9 @@ public class MainActivity extends Activity {
 
     AudioAttributes aa=new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
     soundPool=new SoundPool.Builder().setMaxStreams(4).setAudioAttributes(aa).build();
+    soundPool.setOnLoadCompleteListener((pool,sampleId,status) -> {
+      if(sampleId==clickSound && status==0) clickSoundReady=true;
+    });
     clickSound=soundPool.load(this,R.raw.roulette_click,1);
     prefs = getSharedPreferences("reps100", 0);
     selectedSets = prefs.getInt("sets", 5);
@@ -101,6 +113,14 @@ public class MainActivity extends Activity {
     }
 
     showHome(false);
+  }
+
+  @Override protected void onDestroy() {
+    if(soundPool!=null){
+      soundPool.release();
+      soundPool=null;
+    }
+    super.onDestroy();
   }
 
   @Override public void onBackPressed() { goBack(); }
@@ -222,7 +242,30 @@ public class MainActivity extends Activity {
     b.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
     GradientDrawable face=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{lighten(color,34),color,darken(color,24)}); face.setCornerRadius(dp(18)); face.setStroke(dp(1),lighten(color,65)); b.setBackground(face); b.setElevation(dp(6));
     b.setPadding(dp(10), 0, dp(10), 0); b.setMinHeight(0); b.setMinimumHeight(0);
-    b.setOnTouchListener((v,e)->{if(e.getAction()==MotionEvent.ACTION_DOWN){playClick();v.animate().translationY(dp(2)).translationZ(dp(1)).setDuration(55).start();}else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL){v.animate().translationY(0).translationZ(dp(6)).setDuration(90).start();} return false;});
+    b.setOnTouchListener((v,e)->{
+      if(e.getAction()==MotionEvent.ACTION_DOWN){
+        playClick();
+        v.animate()
+            .translationY(dp(2))
+            .translationZ(0)
+            .scaleX(0.985f)
+            .scaleY(0.985f)
+            .alpha(0.90f)
+            .setDuration(55)
+            .start();
+      } else if(e.getAction()==MotionEvent.ACTION_UP
+          || e.getAction()==MotionEvent.ACTION_CANCEL){
+        v.animate()
+            .translationY(0)
+            .translationZ(dp(6))
+            .scaleX(1f)
+            .scaleY(1f)
+            .alpha(1f)
+            .setDuration(90)
+            .start();
+      }
+      return false;
+    });
     return b;
   }
 
@@ -232,8 +275,33 @@ public class MainActivity extends Activity {
     return b;
   }
 
-  void playClick(){ if(soundPool!=null && clickSound!=0) soundPool.play(clickSound,0.95f,0.95f,1,0,1f); }
-  void playScrollClick(){ long n=System.currentTimeMillis(); if(n-lastScrollClick>55){lastScrollClick=n;playClick();} }
+  void playClick() {
+    if(soundPool!=null && clickSound!=0 && clickSoundReady)
+      soundPool.play(clickSound,0.90f,0.90f,1,0,1f);
+  }
+
+  void playScrollClick(int scrollY) {
+    // One roulette-style click for approximately each list-row distance
+    // travelled. The time guard prevents overlapping audio on fast flings.
+    int step=Math.max(0,scrollY/dp(72));
+    long now=System.currentTimeMillis();
+
+    if(lastScrollStep<0){
+      lastScrollStep=step;
+      return;
+    }
+
+    if(step!=lastScrollStep && now-lastScrollClick>=65){
+      lastScrollStep=step;
+      lastScrollClick=now;
+      playClick();
+    }
+  }
+
+  void resetScrollClickState(int scrollY) {
+    lastScrollStep=Math.max(0,scrollY/dp(72));
+    lastScrollClick=0;
+  }
 
   LinearLayout vbox() {
     LinearLayout l = new LinearLayout(this);
@@ -644,7 +712,9 @@ public class MainActivity extends Activity {
       empty.setBackground(shape(CARD_ALT, 18));
       body.addView(empty, margins(-1, -2, 0, 4, 0, 14));
     } else {
-      for (ExerciseData.Exercise e : new ArrayList<>(routine)) addRoutineExerciseCard(body, e);
+      for (int i = 0; i < routine.size(); i++) {
+        addRoutineExerciseCard(body, routine.get(i), i);
+      }
     }
 
     Button save = button("Save Routine", GREEN);
@@ -681,22 +751,133 @@ public class MainActivity extends Activity {
     display("routine", page, push);
   }
 
-  void addRoutineExerciseCard(LinearLayout body, ExerciseData.Exercise e) {
+  void addRoutineExerciseCard(LinearLayout body, ExerciseData.Exercise e, final int occurrenceIndex) {
     LinearLayout card = vbox();
     card.setPadding(dp(14), dp(10), dp(14), dp(10));
     card.setBackground(shape(CARD, 18));
 
     LinearLayout top = new LinearLayout(this); top.setOrientation(LinearLayout.HORIZONTAL); top.setGravity(Gravity.CENTER_VERTICAL);
-    TextView drag=bold("☰",24); drag.setTextColor(MUTED); drag.setGravity(Gravity.CENTER); drag.setContentDescription("Hold and drag to reorder exercise");
-    drag.setOnLongClickListener(v->{ClipData data=ClipData.newPlainText("exercise",e.name);card.animate().translationZ(dp(16)).scaleX(1.02f).scaleY(1.02f).setDuration(100).start();v.startDragAndDrop(data,new View.DragShadowBuilder(card),e,0);return true;});
+    TextView drag=bold("☰",24);
+    drag.setTextColor(MUTED);
+    drag.setGravity(Gravity.CENTER);
+    drag.setContentDescription("Hold and drag to reorder exercise");
+    drag.setOnLongClickListener(v -> {
+      ClipData data=ClipData.newPlainText("exercise-position",String.valueOf(occurrenceIndex));
+      card.animate().translationZ(dp(16)).scaleX(1.02f).scaleY(1.02f).setDuration(100).start();
+      // V12: use a compact handle-only shadow instead of duplicating the
+      // entire exercise card as a translucent Android drag image.
+      View.DragShadowBuilder handleShadow = new View.DragShadowBuilder(drag) {
+        @Override
+        public void onProvideShadowMetrics(Point size, Point touch) {
+          int w = dp(44);
+          int h = dp(64);
+          size.set(w, h);
+          touch.set(w / 2, h / 2);
+        }
+
+        @Override
+        public void onDrawShadow(Canvas canvas) {
+          Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+          shadowPaint.setColor(CARD_ALT);
+          canvas.drawRoundRect(
+              new RectF(dp(3), dp(3), dp(41), dp(61)),
+              dp(12), dp(12), shadowPaint);
+
+          shadowPaint.setColor(GREEN_SOFT);
+          shadowPaint.setStrokeWidth(dp(3));
+          shadowPaint.setStrokeCap(Paint.Cap.ROUND);
+
+          float cx = dp(22);
+          for (int i = -1; i <= 1; i++) {
+            float y = dp(32 + i * 9);
+            canvas.drawLine(cx - dp(9), y, cx + dp(9), y, shadowPaint);
+          }
+        }
+      };
+
+      boolean started = v.startDragAndDrop(
+          data,
+          handleShadow,
+          Integer.valueOf(occurrenceIndex),
+          0
+      );
+
+      if (started) {
+        // Keep the source card in place; only give it a subtle selected state.
+        card.animate()
+            .scaleX(0.985f)
+            .scaleY(0.985f)
+            .alpha(0.82f)
+            .translationZ(dp(2))
+            .setDuration(90)
+            .start();
+      }
+
+      return started;
+    });
     top.addView(drag,new LinearLayout.LayoutParams(dp(44),dp(64)));
-    card.setOnDragListener((v,event)->{if(event.getAction()==DragEvent.ACTION_DROP && event.getLocalState() instanceof ExerciseData.Exercise){ExerciseData.Exercise src=(ExerciseData.Exercise)event.getLocalState(); if(src!=e){int from=routine.indexOf(src),to=routine.indexOf(e); if(from>=0&&to>=0){routine.remove(from); if(from<to)to--; routine.add(to,src); showRoutine(false);} } return true;} if(event.getAction()==DragEvent.ACTION_DRAG_ENTERED){card.animate().translationY(dp(12)).setDuration(90).start();} if(event.getAction()==DragEvent.ACTION_DRAG_EXITED){card.animate().translationY(0).setDuration(90).start();} if(event.getAction()==DragEvent.ACTION_DRAG_ENDED){card.animate().translationY(0).translationZ(dp(5)).scaleX(1f).scaleY(1f).setDuration(100).start();} return event.getAction()==DragEvent.ACTION_DRAG_STARTED || event.getAction()==DragEvent.ACTION_DRAG_ENTERED || event.getAction()==DragEvent.ACTION_DRAG_EXITED || event.getAction()==DragEvent.ACTION_DRAG_ENDED;});
+
+    card.setOnDragListener((v,event) -> {
+      if(event.getAction()==DragEvent.ACTION_DROP
+          && event.getLocalState() instanceof Integer) {
+        int from=((Integer)event.getLocalState()).intValue();
+        int to=occurrenceIndex;
+
+        if(from>=0 && from<routine.size() && to>=0 && to<routine.size() && from!=to) {
+          ExerciseData.Exercise movedExercise=routine.remove(from);
+          double movedWeight=occurrenceWeight(from);
+          String movedUnit=occurrenceUnit(from);
+
+          if(from < routineOccurrenceWeights.size()) routineOccurrenceWeights.remove(from);
+          if(from < routineOccurrenceUnits.size()) routineOccurrenceUnits.remove(from);
+
+          if(from < to) to--;
+
+          routine.add(to,movedExercise);
+          routineOccurrenceWeights.add(to,movedWeight);
+          routineOccurrenceUnits.add(to,movedUnit);
+
+          showRoutine(false);
+        }
+        return true;
+      }
+
+      if(event.getAction()==DragEvent.ACTION_DRAG_ENTERED)
+        card.animate().translationY(dp(12)).setDuration(90).start();
+
+      if(event.getAction()==DragEvent.ACTION_DRAG_EXITED)
+        card.animate().translationY(0).setDuration(90).start();
+
+      if(event.getAction()==DragEvent.ACTION_DRAG_ENDED)
+        card.animate()
+            .translationY(0)
+            .translationX(0)
+            .translationZ(dp(5))
+            .scaleX(1f)
+            .scaleY(1f)
+            .alpha(1f)
+            .setDuration(100)
+            .start();
+
+      return event.getAction()==DragEvent.ACTION_DRAG_STARTED
+          || event.getAction()==DragEvent.ACTION_DRAG_ENTERED
+          || event.getAction()==DragEvent.ACTION_DRAG_EXITED
+          || event.getAction()==DragEvent.ACTION_DRAG_ENDED;
+    });
+
     LinearLayout texts = vbox(); TextView exerciseName=bold(e.name,17); exerciseName.setSingleLine(false); exerciseName.setMaxLines(2); texts.addView(exerciseName); texts.addView(text(e.muscle+"  •  "+e.movement+"  •  "+e.equipment,12,MUTED));
     top.addView(texts,new LinearLayout.LayoutParams(0,dp(78),1));
     card.addView(top);
     card.setElevation(dp(5));
     final float[] swipeX={0f};
-    card.setOnTouchListener((v,ev)->{ if(ev.getAction()==MotionEvent.ACTION_DOWN){swipeX[0]=ev.getX();return false;} if(ev.getAction()==MotionEvent.ACTION_UP){float dx=ev.getX()-swipeX[0]; if(dx>card.getWidth()*0.55f){card.animate().translationX(card.getWidth()).alpha(0f).setDuration(180).withEndAction(()->{routine.remove(e);routineWeights.remove(e.name);routineWeightUnits.remove(e.name);showRoutine(false);}).start();return true;} card.animate().translationX(0).setDuration(120).start();} else if(ev.getAction()==MotionEvent.ACTION_MOVE){float dx=Math.max(0,ev.getX()-swipeX[0]); if(dx>dp(18)){card.setTranslationX(dx);card.setAlpha(Math.max(.72f,1f-dx/card.getWidth()*.25f));return true;}} return false;});
+    card.setOnTouchListener((v,ev)->{ if(ev.getAction()==MotionEvent.ACTION_DOWN){swipeX[0]=ev.getX();return false;} if(ev.getAction()==MotionEvent.ACTION_UP){float dx=ev.getX()-swipeX[0]; if(dx>card.getWidth()*0.55f){card.animate().translationX(card.getWidth()).alpha(0f).setDuration(180).withEndAction(()->{if(occurrenceIndex>=0 && occurrenceIndex<routine.size()){
+              routine.remove(occurrenceIndex);
+              if(occurrenceIndex<routineOccurrenceWeights.size())
+                routineOccurrenceWeights.remove(occurrenceIndex);
+              if(occurrenceIndex<routineOccurrenceUnits.size())
+                routineOccurrenceUnits.remove(occurrenceIndex);
+            }
+            showRoutine(false);}).start();return true;} card.animate().translationX(0).setDuration(120).start();} else if(ev.getAction()==MotionEvent.ACTION_MOVE){float dx=Math.max(0,ev.getX()-swipeX[0]); if(dx>dp(18)){card.setTranslationX(dx);card.setAlpha(Math.max(.72f,1f-dx/card.getWidth()*.25f));return true;}} return false;});
 
     LinearLayout weightRow=new LinearLayout(this);weightRow.setOrientation(LinearLayout.HORIZONTAL);weightRow.setGravity(Gravity.CENTER_VERTICAL);
     String loadLabel=isBodyweightExercise(e)?"Estimated load":
@@ -706,12 +887,13 @@ public class MainActivity extends Activity {
 
     if (isBodyweightExercise(e)) {
       double kg=effectiveBodyweightKg(e); String unit=prefs.getString("profileWeightUnit","kg"); double shown="lb".equals(unit)?kg/0.45359237:kg;
-      routineWeights.put(e.name,shown); routineWeightUnits.put(e.name,unit);
+      setOccurrenceWeight(occurrenceIndex,shown);
+      setOccurrenceUnit(occurrenceIndex,unit);
       TextView auto=bold(formatNumber(shown)+" "+unit,15); auto.setTextColor(GREEN); auto.setGravity(Gravity.CENTER); auto.setBackground(shape(BG,12));
       weightRow.addView(auto,new LinearLayout.LayoutParams(dp(106),dp(44)));
       TextView tag=text("auto",11,MUTED);tag.setGravity(Gravity.CENTER);weightRow.addView(tag,new LinearLayout.LayoutParams(dp(48),dp(44)));
     } else {
-      EditText w=new EditText(this);w.setText(weightValue(e.name));w.setHint("0");w.setTextColor(TEXT);w.setHintTextColor(MUTED);w.setTextSize(15);w.setGravity(Gravity.CENTER);w.setSingleLine();
+      EditText w=new EditText(this);w.setText(occurrenceWeightValue(occurrenceIndex));w.setHint("0");w.setTextColor(TEXT);w.setHintTextColor(MUTED);w.setTextSize(15);w.setGravity(Gravity.CENTER);w.setSingleLine();
       w.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);w.setBackground(shape(BG,12));
       w.setOnFocusChangeListener((view,hasFocus)->{
         if(hasFocus && routineScrollView!=null){
@@ -728,16 +910,60 @@ public class MainActivity extends Activity {
         }
         return false;
       });
-      w.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int count,int after){}public void onTextChanged(CharSequence s,int st,int before,int count){routineWeights.put(e.name,parseDouble(s.toString(),0));}public void afterTextChanged(Editable s){}});
+      w.addTextChangedListener(new TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int count,int after){}public void onTextChanged(CharSequence s,int st,int before,int count){setOccurrenceWeight(occurrenceIndex,parseDouble(s.toString(),0));}public void afterTextChanged(Editable s){}});
       weightRow.addView(w,new LinearLayout.LayoutParams(dp(76),dp(44)));
       Spinner units=new Spinner(this);String[] unitItems={"kg","lb"};units.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,unitItems));
-      String savedUnit=routineWeightUnits.containsKey(e.name)?routineWeightUnits.get(e.name):prefs.getString("profileWeightUnit","kg");
+      String savedUnit=occurrenceUnit(occurrenceIndex);
       units.setSelection("lb".equals(savedUnit)?1:0);
-      units.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> parent){}public void onItemSelected(android.widget.AdapterView<?> parent,View v,int pos,long id){routineWeightUnits.put(e.name,unitItems[pos]);}});
+      units.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> parent){}public void onItemSelected(android.widget.AdapterView<?> parent,View v,int pos,long id){setOccurrenceUnit(occurrenceIndex,unitItems[pos]);}});
       weightRow.addView(units,new LinearLayout.LayoutParams(dp(76),dp(46)));
     }
     card.addView(weightRow);
     body.addView(card,margins(-1,-2,0,6,0,8));
+  }
+
+  void ensureOccurrenceStorage() {
+    while(routineOccurrenceWeights.size() < routine.size())
+      routineOccurrenceWeights.add(0.0);
+    while(routineOccurrenceUnits.size() < routine.size())
+      routineOccurrenceUnits.add(prefs.getString("profileWeightUnit","kg"));
+
+    while(routineOccurrenceWeights.size() > routine.size())
+      routineOccurrenceWeights.remove(routineOccurrenceWeights.size()-1);
+    while(routineOccurrenceUnits.size() > routine.size())
+      routineOccurrenceUnits.remove(routineOccurrenceUnits.size()-1);
+  }
+
+  double occurrenceWeight(int index) {
+    ensureOccurrenceStorage();
+    if(index<0 || index>=routineOccurrenceWeights.size()) return 0;
+    return routineOccurrenceWeights.get(index);
+  }
+
+  String occurrenceUnit(int index) {
+    ensureOccurrenceStorage();
+    if(index<0 || index>=routineOccurrenceUnits.size())
+      return prefs.getString("profileWeightUnit","kg");
+    return routineOccurrenceUnits.get(index);
+  }
+
+  void setOccurrenceWeight(int index,double value) {
+    ensureOccurrenceStorage();
+    if(index>=0 && index<routineOccurrenceWeights.size())
+      routineOccurrenceWeights.set(index,value);
+  }
+
+  void setOccurrenceUnit(int index,String value) {
+    ensureOccurrenceStorage();
+    if(index>=0 && index<routineOccurrenceUnits.size())
+      routineOccurrenceUnits.set(index,value);
+  }
+
+  String occurrenceWeightValue(int index) {
+    double v=occurrenceWeight(index);
+    if(Math.abs(v-Math.rint(v))<0.0001)
+      return String.valueOf((int)Math.rint(v));
+    return String.format(Locale.US,"%.1f",v);
   }
 
   String weightValue(String name) {
@@ -873,8 +1099,14 @@ public class MainActivity extends Activity {
 
     refresh.run();
     ScrollView sc = scroll(body);
-    sc.setOnScrollChangeListener((v, sx, sy, ox, oy) -> {libraryScrollY = sy; if(Math.abs(sy-oy)>dp(8)) playScrollClick();});
-    sc.post(() -> sc.scrollTo(0, libraryScrollY));
+    sc.setOnScrollChangeListener((v,sx,sy,ox,oy) -> {
+      libraryScrollY=sy;
+      if(Math.abs(sy-oy)>dp(3)) playScrollClick(sy);
+    });
+    sc.post(() -> {
+      sc.scrollTo(0,libraryScrollY);
+      resetScrollClickState(libraryScrollY);
+    });
     page.addView(sc, new LinearLayout.LayoutParams(-1, 0, 1));
     display("library", page, push);
   }
@@ -910,6 +1142,7 @@ public class MainActivity extends Activity {
 
   void refreshLibrary(LinearLayout list, TextView count, String query,
                       String equipment, String muscleFilter) {
+    list.setVisibility(View.INVISIBLE);
     list.removeAllViews();
     String q = query == null ? "" : query.trim().toLowerCase(Locale.US);
     int shown = 0;
@@ -1012,7 +1245,12 @@ public class MainActivity extends Activity {
           || e.muscle.equals("Forearms");
     }
     return e.muscle.equals(filter);
-  }
+  
+    // V12: reveal the completed list in one draw pass rather than
+    // repeatedly redrawing the screen as each exercise row is added.
+    list.setVisibility(View.VISIBLE);
+    list.requestLayout();
+}
 
   void addExerciseRow(LinearLayout list, ExerciseData.Exercise e) {
     LinearLayout card = new LinearLayout(this);
@@ -1034,11 +1272,29 @@ public class MainActivity extends Activity {
     words.addView(meta);
     card.addView(words, new LinearLayout.LayoutParams(0, dp(70), 1));
 
-    TextView arrow = text("›", 28, MUTED);
-    arrow.setGravity(Gravity.CENTER);
-    card.addView(arrow, new LinearLayout.LayoutParams(dp(42), dp(70)));
+    if (selectingForRoutine) {
+      Button addExercise = button("Add Exercise", GREEN_DARK);
+      addExercise.setTextSize(11);
+      addExercise.setContentDescription("Add " + e.name + " to routine");
+      addExercise.setOnClickListener(v -> {
+        routine.add(e);
+        routineOccurrenceWeights.add(0.0);
+        routineOccurrenceUnits.add(prefs.getString("profileWeightUnit", "kg"));
+        Toast.makeText(this, e.name + " added", Toast.LENGTH_SHORT).show();
+        selectingForRoutine = false;
+        libraryScrollY = 0;
+        returnToScreen("routine");
+      });
+      card.addView(addExercise, new LinearLayout.LayoutParams(dp(108), dp(48)));
+    } else {
+      TextView arrow = text("›", 28, MUTED);
+      arrow.setGravity(Gravity.CENTER);
+      card.addView(arrow, new LinearLayout.LayoutParams(dp(42), dp(70)));
+    }
 
-    card.setOnClickListener(v -> showDetail(e, true));
+    card.setOnClickListener(v -> {
+      if (!selectingForRoutine) showDetail(e, true);
+    });
     list.addView(card, margins(-1, dp(84), 0, 4, 0, 4));
   }
 
@@ -1247,12 +1503,18 @@ public class MainActivity extends Activity {
       routine.clear();
       routineWeights.clear();
       routineWeightUnits.clear();
+      routineOccurrenceWeights.clear();
+      routineOccurrenceUnits.clear();
       prefs.edit().remove("draftRoutineName").apply();
       showRoutine(true);
     });
     body.addView(create, margins(-1, dp(52), 0, 16, 0, 12));
 
-    ScrollView routineListScroll=scroll(body); routineListScroll.setOnScrollChangeListener((v,sx,sy,ox,oy)->{if(Math.abs(sy-oy)>dp(8))playScrollClick();});
+    ScrollView routineListScroll=scroll(body);
+    routineListScroll.setOnScrollChangeListener((v,sx,sy,ox,oy) -> {
+      if(Math.abs(sy-oy)>dp(3)) playScrollClick(sy);
+    });
+    routineListScroll.post(() -> resetScrollClickState(routineListScroll.getScrollY()));
     page.addView(routineListScroll, new LinearLayout.LayoutParams(-1, 0, 1));
     display("routines", page, push);
   }
@@ -1285,13 +1547,13 @@ public class MainActivity extends Activity {
       r.put("min", minReps);
       r.put("max", maxReps);
       JSONArray ex = new JSONArray();
-      for (ExerciseData.Exercise e : routine) {
+      ensureOccurrenceStorage();
+      for (int i=0;i<routine.size();i++) {
+        ExerciseData.Exercise e=routine.get(i);
         JSONObject o = new JSONObject();
         o.put("name", e.name);
-        o.put("weight", routineWeights.containsKey(e.name) ? routineWeights.get(e.name) : 0);
-        o.put("unit", routineWeightUnits.containsKey(e.name)
-            ? routineWeightUnits.get(e.name)
-            : prefs.getString("profileWeightUnit", "kg"));
+        o.put("weight", occurrenceWeight(i));
+        o.put("unit", occurrenceUnit(i));
         ex.put(o);
       }
       r.put("exercises", ex);
@@ -1318,6 +1580,8 @@ public class MainActivity extends Activity {
     routine.clear();
     routineWeights.clear();
     routineWeightUnits.clear();
+    routineOccurrenceWeights.clear();
+    routineOccurrenceUnits.clear();
 
     selectedSets = r.optInt("sets", 5);
     minReps = r.optInt("min", 10);
@@ -1332,9 +1596,9 @@ public class MainActivity extends Activity {
         ExerciseData.Exercise match = findExercise(o.optString("name"));
         if (match != null) {
           routine.add(match);
-          routineWeights.put(match.name, o.optDouble("weight", 0));
-          routineWeightUnits.put(match.name,
-              o.optString("unit", prefs.getString("profileWeightUnit", "kg")));
+          routineOccurrenceWeights.add(o.optDouble("weight",0));
+          routineOccurrenceUnits.add(
+              o.optString("unit",prefs.getString("profileWeightUnit","kg")));
         }
       }
     }
@@ -1397,16 +1661,16 @@ public class MainActivity extends Activity {
     repLabel.setGravity(Gravity.CENTER);
     body.addView(repLabel);
 
-    double wt = routineWeights.containsKey(e.name) ? routineWeights.get(e.name) : 0;
-    String unit = routineWeightUnits.containsKey(e.name) ? routineWeightUnits.get(e.name) : "kg";
+    double wt = occurrenceWeight(currentExercise);
+    String unit = occurrenceUnit(currentExercise);
     if (wt > 0) {
       String loadText;
       if (e.equipment.toLowerCase(Locale.US).contains("dumbbell")) {
         double totalPair = wt * 2.0;
-        loadText = "Load: " + weightValue(e.name) + " " + unit + " per dumbbell  •  "
+        loadText = "Load: " + occurrenceWeightValue(currentExercise) + " " + unit + " per dumbbell  •  "
             + formatNumber(totalPair) + " " + unit + " pair";
       } else {
-        loadText = "Load: " + weightValue(e.name) + " " + unit;
+        loadText = "Load: " + occurrenceWeightValue(currentExercise) + " " + unit;
       }
       TextView load = text(loadText, 15, GREEN);
       load.setGravity(Gravity.CENTER);
@@ -1459,10 +1723,11 @@ public class MainActivity extends Activity {
     long durationSec = Math.max(1, (now - workoutStarted) / 1000);
     double segmentSeconds = routine.isEmpty() ? durationSec : durationSec / (double)routine.size();
 
-    for (ExerciseData.Exercise e : routine) {
-      double w = routineWeights.containsKey(e.name) ? routineWeights.get(e.name) : 0;
-      String unit = routineWeightUnits.containsKey(e.name)
-          ? routineWeightUnits.get(e.name) : "kg";
+    ensureOccurrenceStorage();
+    for (int routineIndex=0; routineIndex<routine.size(); routineIndex++) {
+      ExerciseData.Exercise e=routine.get(routineIndex);
+      double w=occurrenceWeight(routineIndex);
+      String unit=occurrenceUnit(routineIndex);
       double kcal = estimateCaloriesSegmented(e, 100, w, unit, segmentSeconds);
       total += kcal;
       try {
@@ -1501,7 +1766,6 @@ public class MainActivity extends Activity {
       final String exportId=String.valueOf(now);
       final String exportTitle=routineName();
       final String exportDetails=healthDetails.toString();
-        final double exportTotal = total;
         final double exportTotal = total;
       HealthConnectBridge.INSTANCE.hasPermissions(this, ok -> {
         if(ok) HealthConnectBridge.INSTANCE.writeWorkout(this,exportId,exportTitle,now-durationSec*1000L,now,exportTotal,exportDetails,(success,msg)->{ if(!success) Toast.makeText(this,msg,Toast.LENGTH_LONG).show(); return kotlin.Unit.INSTANCE; });
@@ -1611,6 +1875,8 @@ public class MainActivity extends Activity {
       routine.clear();
       routineWeights.clear();
       routineWeightUnits.clear();
+      routineOccurrenceWeights.clear();
+      routineOccurrenceUnits.clear();
       prefs.edit().remove("draftRoutineName").apply();
       showHome(false);
     });
@@ -1702,8 +1968,23 @@ public class MainActivity extends Activity {
 
     body.addView(sectionTitle("Body composition guide"));
     PhotoBmiScaleView bmiScale = new PhotoBmiScaleView(this, sex.getSelectedItemPosition()==0);
-    int bmiGuideHeight = Math.min(dp(390), (int)(getResources().getDisplayMetrics().widthPixels * 0.72f));
-    body.addView(bmiScale, new LinearLayout.LayoutParams(-1, bmiGuideHeight));
+
+    // V12: taller responsive Body Composition guide.
+    // Preserve the figure's proportions and provide sufficient room
+    // for the complete head/body on phones and larger tablets.
+    int bmiScreenWidth = getResources().getDisplayMetrics().widthPixels;
+    int bmiGuideHeight = (int)(bmiScreenWidth * 1.02f);
+    bmiGuideHeight = Math.max(dp(350), bmiGuideHeight);
+    bmiGuideHeight = Math.min(dp(560), bmiGuideHeight);
+
+    bmiScale.setPadding(dp(6), dp(18), dp(6), dp(18));
+    bmiScale.setClipToPadding(false);
+
+    LinearLayout.LayoutParams bmiGuideParams =
+        new LinearLayout.LayoutParams(-1, bmiGuideHeight);
+    bmiGuideParams.setMargins(0, dp(4), 0, dp(10));
+
+    body.addView(bmiScale, bmiGuideParams);
     sex.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
       public void onNothingSelected(android.widget.AdapterView<?> parent){}
       public void onItemSelected(android.widget.AdapterView<?> parent,View v,int pos,long id){bmiScale.setMale(pos==0);profileMeasureImg[0].setImageResource(pos==0?R.drawable.profile_measurement_male:R.drawable.profile_measurement_female);}
@@ -1713,15 +1994,88 @@ public class MainActivity extends Activity {
 
     body.addView(sectionTitle("Health integrations"));
     LinearLayout healthBox=vbox(); healthBox.setPadding(dp(14),dp(12),dp(14),dp(12)); healthBox.setBackground(shape(CARD,18));
-    TextView hcStatus=text(prefs.getBoolean("healthConnectEnabled",false)?"Health Connect: enabled":"Health Connect: not enabled",14,TEXT); healthBox.addView(hcStatus);
-    healthBox.addView(text("When enabled, Reps100 writes completed strength-training sessions, exercise details and estimated calories burned to Health Connect after each completed routine.",12,MUTED));
-    Button hc=button(prefs.getBoolean("healthConnectEnabled",false)?"Health Connect Enabled":"Health Connect Permission",GREEN_DARK);
-    hc.setOnClickListener(v->{
-      if(!HealthConnectBridge.INSTANCE.isAvailable(this)){if(HealthConnectBridge.INSTANCE.needsProviderUpdate(this)){Toast.makeText(this,"Health Connect needs to be installed or updated.",Toast.LENGTH_LONG).show();HealthConnectBridge.INSTANCE.openProvider(this);}else Toast.makeText(this,"Health Connect is not supported on this Android device.",Toast.LENGTH_LONG).show();return;}
-      prefs.edit().putBoolean("healthConnectEnabled",true).apply();
-      HealthConnectBridge.INSTANCE.requestPermissions(this);
+    boolean healthEnabled=prefs.getBoolean("healthConnectEnabled",false);
+
+    TextView hcStatus=text(
+        healthEnabled ? "Health Connect: enabled" : "Health Connect: not enabled",
+        14,
+        healthEnabled ? GREEN_SOFT : MUTED);
+    healthBox.addView(hcStatus);
+
+    healthBox.addView(text(
+        "When enabled, Reps100 writes completed strength-training sessions, exercise details and estimated calories burned to Health Connect after each completed routine.",
+        12,MUTED));
+
+    Button hc=button(
+        healthEnabled ? "Disable Health Connect" : "Enable Health Connect",
+        healthEnabled ? CARD_ALT : GREEN_DARK);
+
+    hc.setOnClickListener(v -> {
+      boolean currentlyEnabled=prefs.getBoolean("healthConnectEnabled",false);
+
+      if(currentlyEnabled){
+        new AlertDialog.Builder(this)
+            .setTitle("Disable Health Connect?")
+            .setMessage("Reps100 will stop exporting future completed workouts to Health Connect. Workouts already written to Health Connect are not deleted.")
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Disable",(dialog,which) -> {
+              prefs.edit().putBoolean("healthConnectEnabled",false).apply();
+              Toast.makeText(
+                  this,
+                  "Health Connect export disabled.",
+                  Toast.LENGTH_SHORT).show();
+              showProfile(false);
+            })
+            .show();
+        return;
+      }
+
+      if(!HealthConnectBridge.INSTANCE.isAvailable(this)){
+        if(HealthConnectBridge.INSTANCE.needsProviderUpdate(this)){
+          Toast.makeText(
+              this,
+              "Health Connect needs to be installed or updated.",
+              Toast.LENGTH_LONG).show();
+          HealthConnectBridge.INSTANCE.openProvider(this);
+        } else {
+          Toast.makeText(
+              this,
+              "Health Connect is not supported on this Android device.",
+              Toast.LENGTH_LONG).show();
+        }
+        return;
+      }
+
+      HealthConnectBridge.INSTANCE.hasPermissions(this, granted -> {
+        if(granted){
+          prefs.edit().putBoolean("healthConnectEnabled",true).apply();
+          runOnUiThread(() -> {
+            Toast.makeText(
+                this,
+                "Health Connect export enabled.",
+                Toast.LENGTH_SHORT).show();
+            showProfile(false);
+          });
+        } else {
+          runOnUiThread(() -> {
+            Toast.makeText(
+                this,
+                "Grant Health Connect permission to enable workout export.",
+                Toast.LENGTH_LONG).show();
+            HealthConnectBridge.INSTANCE.requestPermissions(this);
+          });
+        }
+        return kotlin.Unit.INSTANCE;
+      });
     });
+
     healthBox.addView(hc,margins(-1,dp(50),0,10,0,4));
+
+    healthBox.addView(text(
+        healthEnabled
+            ? "Reps100 is currently set to export completed workouts. You can disable future exports here at any time."
+            : "Health Connect export is currently off. No completed workouts will be exported until you enable it.",
+        12,MUTED));
     TextView garmin=bold("Garmin Connect: developer approval required",14); garmin.setTextColor(MUTED); healthBox.addView(garmin);
     healthBox.addView(text("The Garmin connection point is reserved in Reps100, but completed-activity upload remains disabled until Garmin approves the integration and supplies the permitted API/credentials. No Garmin password or secret is stored in the app source.",12,MUTED));
     body.addView(healthBox,margins(-1,-2,0,4,0,10));
