@@ -1,0 +1,255 @@
+53-
+54-  int selectedSets = 5;
+55-  int minReps = 10;
+56-  int maxReps = 30;
+57-
+58-  int currentExercise = 0;
+59-  int currentSet = 0;
+60-  ArrayList<Integer> currentSplit = new ArrayList<>();
+61-  ArrayList<ArrayList<Integer>> workoutSplits = new ArrayList<>();
+62-  long workoutStarted = 0;
+63-
+64-  SharedPreferences prefs;
+65:  SoundPool soundPool; int clickSound=0; long lastScrollClick=0;
+66-  SimpleDateFormat dateKey = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+67-  SimpleDateFormat dateTime = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US);
+68-  SimpleDateFormat dayLabel = new SimpleDateFormat("EEE", Locale.US);
+69-  SimpleDateFormat shortDate = new SimpleDateFormat("d MMM", Locale.US);
+70-
+71-  int dp(float v) {
+72-    return Math.round(v * getResources().getDisplayMetrics().density);
+73-  }
+74-
+75-  @Override public void onCreate(Bundle b) {
+76-    super.onCreate(b);
+77-    getWindow().setStatusBarColor(BAR);
+78-    getWindow().setNavigationBarColor(Color.BLACK);
+79-    getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+80-    if (Build.VERSION.SDK_INT >= 30) getWindow().setStatusBarColor(BAR);
+81-
+82-    AudioAttributes aa=new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
+83:    soundPool=new SoundPool.Builder().setMaxStreams(4).setAudioAttributes(aa).build();
+84:    clickSound=soundPool.load(this,R.raw.roulette_click,1);
+85-    prefs = getSharedPreferences("reps100", 0);
+86-    selectedSets = prefs.getInt("sets", 5);
+87-    minReps = prefs.getInt("minReps", 10);
+88-    maxReps = prefs.getInt("maxReps", 30);
+89-
+90-    if (!prefs.contains("installDate")) {
+91-      long firstInstall = System.currentTimeMillis();
+92-      try {
+93-        firstInstall = getPackageManager().getPackageInfo(getPackageName(), 0).firstInstallTime;
+94-      } catch (Exception ignored) {}
+95-      prefs.edit().putString("installDate", dateKey.format(new Date(firstInstall))).apply();
+96-    }
+--
+223-    GradientDrawable face=new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{lighten(color,34),color,darken(color,24)}); face.setCornerRadius(dp(18)); face.setStroke(dp(1),lighten(color,65)); b.setBackground(face); b.setElevation(dp(6));
+224-    b.setPadding(dp(10), 0, dp(10), 0); b.setMinHeight(0); b.setMinimumHeight(0);
+225-    b.setOnTouchListener((v,e)->{if(e.getAction()==MotionEvent.ACTION_DOWN){playClick();v.animate().translationY(dp(2)).translationZ(dp(1)).setDuration(55).start();}else if(e.getAction()==MotionEvent.ACTION_UP||e.getAction()==MotionEvent.ACTION_CANCEL){v.animate().translationY(0).translationZ(dp(6)).setDuration(90).start();} return false;});
+226-    return b;
+227-  }
+228-
+229-  Button outlineButton(String label) {
+230-    Button b = button(label, Color.TRANSPARENT);
+231-    b.setBackground(outline(CARD_ALT, 1, 18));
+232-    return b;
+233-  }
+234-
+235:  void playClick(){ if(soundPool!=null && clickSound!=0) soundPool.play(clickSound,0.95f,0.95f,1,0,1f); }
+236-  void playScrollClick(){ long n=System.currentTimeMillis(); if(n-lastScrollClick>55){lastScrollClick=n;playClick();} }
+237-
+238-  LinearLayout vbox() {
+239-    LinearLayout l = new LinearLayout(this);
+240-    l.setOrientation(LinearLayout.VERTICAL);
+241-    l.setBackgroundColor(BG);
+242-    return l;
+243-  }
+244-
+245-  LinearLayout contentColumn() {
+246-    LinearLayout l = vbox();
+247-    l.setPadding(dp(18), dp(14), dp(18), dp(22));
+--
+344-    all.addView(brand);
+345-
+346-    TextView strap = text("100 reps to a more conditioned body. With a unique rep randomiser that keeps your sets interesting, which you can tailor to match your level.", 14, GREEN);
+347-    strap.setGravity(Gravity.CENTER);
+348-    strap.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+349-    strap.setPadding(dp(18), dp(6), dp(18), dp(10));
+350-    all.addView(strap);
+351-
+352-    addStreakCard(all);
+353-    all.addView(space(8));
+354-
+355-    addMenuRow(all,
+356:        menuCard("plus", "Create Routine", v -> showRoutine(true)),
+357-        menuCard("sliders", "Sets & Reps", v -> showSetsManager(true)));
+358-
+359-    addMenuRow(all,
+360-        menuCard("list", "Routines", v -> showRoutineList(true)),
+361-        menuCard("dumbbell", "Exercises", v -> showLibrary(true)));
+362-
+363-    addMenuRow(all,
+364-        menuCard("check", "Completed", v -> showHistory(true)),
+365-        menuCard("smile", "Profile", v -> showProfile(true)));
+366-
+367-    TextView offline = text("OFFLINE FIRST  •  YOUR DATA STAYS ON DEVICE", 12, MUTED);
+368-    offline.setGravity(Gravity.CENTER);
+--
+591-    Random r = new Random();
+592-    for (int i = 0; i < sets; i++) {
+593-      int left = sets - i - 1;
+594-      int low = Math.max(min, remaining - left * max);
+595-      int high = Math.min(max, remaining - left * min);
+596-      int v = low + (high > low ? r.nextInt(high - low + 1) : 0);
+597-      split.add(v);
+598-      remaining -= v;
+599-    }
+600-    return split;
+601-  }
+602-
+603:  // ---------- Create routine ----------
+604-  void showRoutine(boolean push) {
+605-    LinearLayout page = pageShell("Create New Routine");
+606-    LinearLayout body = contentColumn();
+607-
+608-    EditText name = field("Routine name", prefs.getString("draftRoutineName", ""),
+609-        InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+610-    body.addView(name);
+611-
+612-    LinearLayout setCard = new LinearLayout(this);
+613-    setCard.setOrientation(LinearLayout.HORIZONTAL);
+614-    setCard.setGravity(Gravity.CENTER_VERTICAL);
+615-    setCard.setPadding(dp(14), dp(8), dp(10), dp(8));
+616-    setCard.setBackground(shape(CARD, 18));
+617-    TextView setSummary = text(selectedSets + " sets  •  " + minReps + "–" + maxReps
+618-        + " reps per set  •  100 total", 14, TEXT);
+619-    setCard.addView(setSummary, new LinearLayout.LayoutParams(0, dp(52), 1));
+620-    Button editSets = button("Edit", GREEN_DARK);
+621-    editSets.setOnClickListener(v -> {
+622-      prefs.edit().putString("draftRoutineName", name.getText().toString()).apply();
+623-      showSetsManager(true);
+624-    });
+625-    setCard.addView(editSets, new LinearLayout.LayoutParams(dp(82), dp(46)));
+626-    body.addView(setCard, margins(-1, -2, 0, 8, 0, 12));
+627-
+628:    Button add = outlineButton("＋  Add Exercise");
+629-    add.setTextColor(GREEN);
+630-    add.setOnClickListener(v -> {
+631-      prefs.edit().putString("draftRoutineName", name.getText().toString()).apply();
+632-      selectingForRoutine = true;
+633-      showLibrary(true);
+634-    });
+635-    body.addView(add, margins(-1, dp(52), 0, 6, 0, 12));
+636-
+637-    body.addView(sectionTitle("Exercises in this routine (" + routine.size() + ")"));
+638:    body.addView(text("Swipe right on an exercise to delete it",12,MUTED));
+639-
+640-    if (routine.isEmpty()) {
+641:      TextView empty = text("No exercises added yet. Tap “Add Exercise” to build your routine.",
+642-          15, TEXT);
+643-      empty.setPadding(dp(18), dp(16), dp(18), dp(16));
+644-      empty.setBackground(shape(CARD_ALT, 18));
+645-      body.addView(empty, margins(-1, -2, 0, 4, 0, 14));
+646-    } else {
+647-      for (ExerciseData.Exercise e : new ArrayList<>(routine)) addRoutineExerciseCard(body, e);
+648-    }
+649-
+650-    Button save = button("Save Routine", GREEN);
+651-    save.setTextColor(TEXT);
+652-    save.setOnClickListener(v -> {
+653-      prefs.edit().putString("draftRoutineName", name.getText().toString()).apply();
+--
+686-    card.setPadding(dp(14), dp(10), dp(14), dp(10));
+687-    card.setBackground(shape(CARD, 18));
+688-
+689-    LinearLayout top = new LinearLayout(this); top.setOrientation(LinearLayout.HORIZONTAL); top.setGravity(Gravity.CENTER_VERTICAL);
+690-    TextView drag=bold("☰",24); drag.setTextColor(MUTED); drag.setGravity(Gravity.CENTER); drag.setContentDescription("Hold and drag to reorder exercise");
+691-    drag.setOnLongClickListener(v->{ClipData data=ClipData.newPlainText("exercise",e.name);card.animate().translationZ(dp(16)).scaleX(1.02f).scaleY(1.02f).setDuration(100).start();v.startDragAndDrop(data,new View.DragShadowBuilder(card),e,0);return true;});
+692-    top.addView(drag,new LinearLayout.LayoutParams(dp(44),dp(64)));
+693-    card.setOnDragListener((v,event)->{if(event.getAction()==DragEvent.ACTION_DROP && event.getLocalState() instanceof ExerciseData.Exercise){ExerciseData.Exercise src=(ExerciseData.Exercise)event.getLocalState(); if(src!=e){int from=routine.indexOf(src),to=routine.indexOf(e); if(from>=0&&to>=0){routine.remove(from); if(from<to)to--; routine.add(to,src); showRoutine(false);} } return true;} if(event.getAction()==DragEvent.ACTION_DRAG_ENTERED){card.animate().translationY(dp(12)).setDuration(90).start();} if(event.getAction()==DragEvent.ACTION_DRAG_EXITED){card.animate().translationY(0).setDuration(90).start();} if(event.getAction()==DragEvent.ACTION_DRAG_ENDED){card.animate().translationY(0).translationZ(dp(5)).scaleX(1f).scaleY(1f).setDuration(100).start();} return event.getAction()==DragEvent.ACTION_DRAG_STARTED || event.getAction()==DragEvent.ACTION_DRAG_ENTERED || event.getAction()==DragEvent.ACTION_DRAG_EXITED || event.getAction()==DragEvent.ACTION_DRAG_ENDED;});
+694-    LinearLayout texts = vbox(); TextView exerciseName=bold(e.name,17); exerciseName.setSingleLine(false); exerciseName.setMaxLines(2); texts.addView(exerciseName); texts.addView(text(e.muscle+"  •  "+e.movement+"  •  "+e.equipment,12,MUTED));
+695-    top.addView(texts,new LinearLayout.LayoutParams(0,dp(78),1));
+696-    card.addView(top);
+697-    card.setElevation(dp(5));
+698:    final float[] swipeX={0f};
+699:    card.setOnTouchListener((v,ev)->{ if(ev.getAction()==MotionEvent.ACTION_DOWN){swipeX[0]=ev.getX();return false;} if(ev.getAction()==MotionEvent.ACTION_UP){float dx=ev.getX()-swipeX[0]; if(dx>card.getWidth()*0.55f){card.animate().translationX(card.getWidth()).alpha(0f).setDuration(180).withEndAction(()->{routine.remove(e);routineWeights.remove(e.name);routineWeightUnits.remove(e.name);showRoutine(false);}).start();return true;} card.animate().translationX(0).setDuration(120).start();} else if(ev.getAction()==MotionEvent.ACTION_MOVE){float dx=Math.max(0,ev.getX()-swipeX[0]); if(dx>dp(18)){card.setTranslationX(dx);card.setAlpha(Math.max(.72f,1f-dx/card.getWidth()*.25f));return true;}} return false;});
+700-
+701-    LinearLayout weightRow=new LinearLayout(this);weightRow.setOrientation(LinearLayout.HORIZONTAL);weightRow.setGravity(Gravity.CENTER_VERTICAL);
+702-    String loadLabel=isBodyweightExercise(e)?"Estimated load":
+703-        (e.equipment.toLowerCase(Locale.US).contains("dumbbell")?"Weight per dumbbell":
+704-        (e.equipment.toLowerCase(Locale.US).contains("kettlebell")?"Kettlebell weight":"Weight used"));
+705-    weightRow.addView(text(loadLabel,13,MUTED),new LinearLayout.LayoutParams(0,dp(48),1));
+706-
+707-    if (isBodyweightExercise(e)) {
+708-      double kg=effectiveBodyweightKg(e); String unit=prefs.getString("profileWeightUnit","kg"); double shown="lb".equals(unit)?kg/0.45359237:kg;
+709-      routineWeights.put(e.name,shown); routineWeightUnits.put(e.name,unit);
+710-      TextView auto=bold(formatNumber(shown)+" "+unit,15); auto.setTextColor(GREEN); auto.setGravity(Gravity.CENTER); auto.setBackground(shape(BG,12));
+711-      weightRow.addView(auto,new LinearLayout.LayoutParams(dp(106),dp(44)));
+--
+797-    int desiredBottom = visible.bottom - dp(28);
+798-    int fieldBottom = loc[1] + field.getHeight();
+799-    if(fieldBottom > desiredBottom){
+800-      routineScrollView.smoothScrollBy(0, fieldBottom - desiredBottom + dp(24));
+801-    } else {
+802-      int desiredTop = visible.top + dp(110);
+803-      if(loc[1] < desiredTop) routineScrollView.smoothScrollBy(0, loc[1]-desiredTop);
+804-    }
+805-  }
+806-
+807-  // ---------- Exercise library ----------
+808-  void showLibrary(boolean push) {
+809:    LinearLayout page = pageShell(selectingForRoutine ? "Add Exercise" : "Exercise List");
+810-    LinearLayout body = contentColumn();
+811-
+812-    EditText search = field("Search", libraryQuery, InputType.TYPE_CLASS_TEXT);
+813-    body.addView(search);
+814-
+815-    String[] equipmentFilter = {"All", "Bodyweight", "Weightlifting", "Barbell", "Dumbbell", "Cable", "Machine", "Kettlebell"};
+816-    final String[] equipment = {libraryEquipment};
+817-    final String[] muscle = {libraryMuscle};
+818-
+819-    HorizontalScrollView equipScroll = new HorizontalScrollView(this);
+820-    equipScroll.setHorizontalScrollBarEnabled(false);
+821-    LinearLayout newEquip = new LinearLayout(this);
+--
+1691-    body.addView(sectionTitle("Your results"));
+1692-    LinearLayout results=vbox(); results.setPadding(dp(14),dp(12),dp(14),dp(12)); results.setBackground(shape(CARD,18));
+1693-    double bmi=bmiValue(), whtr=waistHeightRatio(), whr=waistHipRatio();
+1694-    TextView bmiLine=bold("BMI  " + String.format(Locale.US,"%.1f",bmi) + "  •  " + bmiCategory(bmi),17); bmiLine.setTextColor(bmiColor(bmi)); results.addView(bmiLine);
+1695-    TextView whtrLine=text("Waist-to-height ratio  " + String.format(Locale.US,"%.2f",whtr) + "  •  " + whtrCategory(whtr),14,TEXT); results.addView(whtrLine);
+1696-    TextView whrLine=text("Waist-to-hip ratio  " + String.format(Locale.US,"%.2f",whr),14,TEXT); results.addView(whrLine);
+1697-    TextView risk=text(riskBandText(whtr,whr,sex.getSelectedItemPosition()==0),13,MUTED); results.addView(risk);
+1698-    body.addView(results,margins(-1,-2,0,4,0,8));
+1699-
+1700-    body.addView(sectionTitle("Waist-to-hip ratio reference"));
+1701-    body.addView(waistHipRiskTable(), margins(-1,-2,0,2,0,10));
+1702-
+1703:    body.addView(sectionTitle("Body composition guide"));
+1704-    PhotoBmiScaleView bmiScale = new PhotoBmiScaleView(this, sex.getSelectedItemPosition()==0);
+1705-    body.addView(bmiScale, new LinearLayout.LayoutParams(-1,dp(230)));
+1706-    sex.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){
+1707-      public void onNothingSelected(android.widget.AdapterView<?> parent){}
+1708-      public void onItemSelected(android.widget.AdapterView<?> parent,View v,int pos,long id){bmiScale.setMale(pos==0);profileMeasureImg[0].setImageResource(pos==0?R.drawable.profile_measurement_male:R.drawable.profile_measurement_female);}
+1709-    });
+1710-    body.addView(text("BMI is a screening measure, not a direct measurement of body fat. The scale below shows your calculated BMI position and the approximate body-composition figure/category it aligns with.",12,MUTED));
+1711-
+1712-
+1713-    body.addView(sectionTitle("Health integrations"));
+1714-    LinearLayout healthBox=vbox(); healthBox.setPadding(dp(14),dp(12),dp(14),dp(12)); healthBox.setBackground(shape(CARD,18));
+1715:    TextView hcStatus=text(prefs.getBoolean("healthConnectEnabled",false)?"Health Connect: enabled":"Health Connect: not enabled",14,TEXT); healthBox.addView(hcStatus);
+1716:    healthBox.addView(text("When enabled, Reps100 writes completed strength-training sessions, exercise details and estimated calories burned to Health Connect after each completed routine.",12,MUTED));
+1717:    Button hc=button(prefs.getBoolean("healthConnectEnabled",false)?"Health Connect permissions":"Enable Health Connect",GREEN_DARK);
+1718-    hc.setOnClickListener(v->{
+1719:      if(!HealthConnectBridge.INSTANCE.isAvailable(this)){if(HealthConnectBridge.INSTANCE.needsProviderUpdate(this)){Toast.makeText(this,"Health Connect needs to be installed or updated.",Toast.LENGTH_LONG).show();HealthConnectBridge.INSTANCE.openProvider(this);}else Toast.makeText(this,"Health Connect is not supported on this Android device.",Toast.LENGTH_LONG).show();return;}
+1720-      prefs.edit().putBoolean("healthConnectEnabled",true).apply();
+1721-      HealthConnectBridge.INSTANCE.requestPermissions(this);
+1722-    });
+1723-    healthBox.addView(hc,margins(-1,dp(50),0,10,0,4));
+1724-    TextView garmin=bold("Garmin Connect: developer approval required",14); garmin.setTextColor(MUTED); healthBox.addView(garmin);
+1725-    healthBox.addView(text("The Garmin connection point is reserved in Reps100, but completed-activity upload remains disabled until Garmin approves the integration and supplies the permitted API/credentials. No Garmin password or secret is stored in the app source.",12,MUTED));
+1726-    body.addView(healthBox,margins(-1,-2,0,4,0,10));
+1727-
+1728-    Button save=button("Save Profile",GREEN_DARK);save.setOnClickListener(v->{
+1729-      double cm,kg,wc,hipCm;
+1730-      if("metric".equals(activeSystem[0])){cm=parseDouble(heightCm[0].getText().toString(),storedHeightCm());kg=parseDouble(weight[0].getText().toString(),profileWeightKg());wc=parseDouble(waist[0].getText().toString(),storedWaistCm());hipCm=parseDouble(hip[0].getText().toString(),storedHipCm());}
+1731-      else{double ft=parseDouble(heightFt[0].getText().toString(),0),in=parseDouble(heightIn[0].getText().toString(),0);cm=(ft*12+in)*2.54;kg=parseDouble(weight[0].getText().toString(),profileWeightKg()/0.45359237)*0.45359237;wc=parseDouble(waist[0].getText().toString(),storedWaistCm()/2.54)*2.54;hipCm=parseDouble(hip[0].getText().toString(),storedHipCm()/2.54)*2.54;}
