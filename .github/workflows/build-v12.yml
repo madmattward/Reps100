@@ -1,0 +1,41 @@
+name: Build Reps100 V12
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'V12-source/**'
+      - '.github/workflows/build-v12.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle executable
+        run: chmod +x V12-source/gradlew
+
+      - name: Build V12 debug APK
+        working-directory: V12-source
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload V12 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reps100-V12-APK
+          path: V12-source/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
