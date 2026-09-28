@@ -1185,6 +1185,10 @@ public class MainActivity extends Activity {
       empty.setGravity(Gravity.CENTER);
       list.addView(empty, margins(-1, dp(90), 0, 12, 0, 0));
     }
+
+    // V12: reveal the completed list only after it has been populated.
+    list.setVisibility(View.VISIBLE);
+    list.requestLayout();
   }
 
   String normalizeSearch(String raw) {
@@ -1245,12 +1249,7 @@ public class MainActivity extends Activity {
           || e.muscle.equals("Forearms");
     }
     return e.muscle.equals(filter);
-  
-    // V12: reveal the completed list in one draw pass rather than
-    // repeatedly redrawing the screen as each exercise row is added.
-    list.setVisibility(View.VISIBLE);
-    list.requestLayout();
-}
+  }
 
   void addExerciseRow(LinearLayout list, ExerciseData.Exercise e) {
     LinearLayout card = new LinearLayout(this);
@@ -1978,7 +1977,7 @@ public class MainActivity extends Activity {
     bmiGuideHeight = Math.min(dp(560), bmiGuideHeight);
 
     bmiScale.setPadding(dp(6), dp(18), dp(6), dp(18));
-    bmiScale.setClipToPadding(false);
+    
 
     LinearLayout.LayoutParams bmiGuideParams =
         new LinearLayout.LayoutParams(-1, bmiGuideHeight);
