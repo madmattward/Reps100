@@ -34,5 +34,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Reps100-V12-APK
-          path: V12-source/app/build/outputs/apk/debug/*.apk
+          path: V12-source/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
