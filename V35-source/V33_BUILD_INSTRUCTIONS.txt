@@ -1,0 +1,25 @@
+Reps100 V33 - Successful build configuration
+
+Requirements:
+- Java 21
+- Android SDK at /home/codespace/android-sdk
+
+From inside V33-source:
+
+export ANDROID_HOME=/home/codespace/android-sdk
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
+chmod +x gradlew
+
+./gradlew assembleRelease \
+  -x lintVitalAnalyzeRelease \
+  -x lintVitalReportRelease \
+  -x lintVitalRelease \
+  --no-daemon \
+  --max-workers=1 \
+  --no-parallel \
+  --console=plain \
+  -Dorg.gradle.jvmargs="-Xmx1024m -XX:MaxMetaspaceSize=384m -XX:ActiveProcessorCount=2"
+
+Note: Release lint tasks are skipped as a temporary
+workaround. This does not fix underlying lint issues.

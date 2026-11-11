@@ -1,0 +1,14 @@
+V33 Daily100 gesture alignment (Create Routine reference)
+
+Source baseline: Reps100-V33-fixed-source.zip.
+Only Daily100 handle listener in MainActivity.java was changed.
+- Removed separate Daily100 handle swipe-to-delete recognizer.
+- Horizontal swipe is now owned by the existing shared SwipeDeleteLayout, exactly as on Create Routine.
+- Long-press starts reorder and disables parent interception, matching Create Routine timing.
+- Movement beyond touch slop cancels pending long-press, matching Create Routine.
+- On release, wrapper interception is reset, matching Create Routine.
+- Create Routine Java source region was verified unchanged byte-for-byte.
+
+IMPORTANT: Create Routine itself does not disable parent vertical scrolling immediately on ACTION_DOWN.
+Therefore this strict match cannot guarantee that touching the Daily100 handle prevents vertical scrolling before a long-press.
+Device gesture tests are required; the code was not compiled or run on a phone here.

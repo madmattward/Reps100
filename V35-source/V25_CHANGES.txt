@@ -1,0 +1,7 @@
+V25 changes from corrected V24:
+- Uploaded WAV used for all existing UI button-click and scrolling sound playback.
+- Scrolling sound continues on every nonzero scroll movement, rate-limited to 65 ms.
+- Android versionCode 25, versionName 25.0.
+- No other features intentionally changed.
+- Home streak card now has a light blue outline matching the circular home menu buttons.
+- Community and Settings header buttons now depress and rebound on touch, and play the same V25 click sound as other buttons.
